@@ -47,6 +47,21 @@ case "$arch" in
     ;;
 esac
 
+ensure_ffmpeg() {
+  if command -v ffmpeg >/dev/null 2>&1; then
+    return
+  fi
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "ffmpeg not found, installing it via apt (sudo required)..."
+    sudo apt-get update -qq
+    sudo apt-get install -y ffmpeg
+  else
+    echo "Warning: ffmpeg was not found and could not be installed automatically." >&2
+    echo "light-gen-subZ needs it on your PATH to extract audio from video files." >&2
+    echo "Install it with your distro's package manager (e.g. 'dnf install ffmpeg', 'pacman -S ffmpeg')." >&2
+  fi
+}
+
 if command -v dpkg >/dev/null 2>&1; then
   url="$(pick_asset_url "${arch_tag}\\.deb")"
   if [ -z "$url" ]; then
@@ -59,6 +74,7 @@ if command -v dpkg >/dev/null 2>&1; then
   echo "Installing (sudo required)..."
   sudo apt-get install -y "$tmp" || sudo dpkg -i "$tmp"
   rm -f "$tmp"
+  ensure_ffmpeg
   echo "Installed. Launch it from your app menu, or run: light-gen-subz"
 else
   url="$(pick_asset_url "${arch_tag}\\.AppImage")"
@@ -71,6 +87,7 @@ else
   echo "Downloading $url"
   curl -fsSL "$url" -o "$dest"
   chmod +x "$dest"
+  ensure_ffmpeg
   echo "Installed to $dest"
   echo "Make sure $HOME/.local/bin is on your PATH, then run: light-gen-subz.AppImage"
 fi
