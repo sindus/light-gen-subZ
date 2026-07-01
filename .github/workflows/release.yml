@@ -35,7 +35,9 @@ jobs:
 
       - name: Install macOS build dependencies
         if: matrix.platform == 'macos-latest'
-        run: brew install cmake
+        run: |
+          brew install cmake
+          echo "MACOSX_DEPLOYMENT_TARGET=10.15" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -53,7 +55,6 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MACOSX_DEPLOYMENT_TARGET: "10.15"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "light-gen-subZ ${{ github.ref_name }}"
