@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
+
+type UpdateStatus = "idle" | "checking" | "up_to_date" | "installing" | "error";
 
 type Stage =
   | "download_model"
@@ -182,6 +186,8 @@ function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageInfo[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const [sourceLang, setSourceLang] = useState("auto");
   const [targetLang, setTargetLang] = useState("en");
@@ -307,6 +313,24 @@ function App() {
     await invoke("set_settings", { settings: next });
   }
 
+  async function checkForUpdates() {
+    setUpdateStatus("checking");
+    setUpdateError(null);
+    try {
+      const update = await check();
+      if (!update) {
+        setUpdateStatus("up_to_date");
+        return;
+      }
+      setUpdateStatus("installing");
+      await update.downloadAndInstall();
+      await relaunch();
+    } catch (e) {
+      setUpdateStatus("error");
+      setUpdateError(String(e));
+    }
+  }
+
   const status: "idle" | "running" | "done" | "error" = error
     ? "error"
     : running
@@ -411,6 +435,32 @@ function App() {
               />
             </div>
           )}
+
+          <div className="settings-row">
+            <span className="settings-label">Updates</span>
+            <div className="cmd-row">
+              <button
+                className="btn btn-ghost"
+                onClick={checkForUpdates}
+                disabled={updateStatus === "checking" || updateStatus === "installing"}
+                type="button"
+              >
+                Check for updates
+              </button>
+              {updateStatus === "checking" && <span className="update-status">Checking…</span>}
+              {updateStatus === "up_to_date" && (
+                <span className="update-status">You're up to date</span>
+              )}
+              {updateStatus === "installing" && (
+                <span className="update-status">Installing update, restarting…</span>
+              )}
+              {updateStatus === "error" && (
+                <span className="update-status update-status--error">
+                  Update check failed: {updateError}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

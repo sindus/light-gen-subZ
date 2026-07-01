@@ -24,6 +24,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -31,5 +32,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ4M0MyNUVFOTY3NDFFODMKUldTREhuU1c3aVU4U09wRzdVQUYrSHNEeUlpaThWWmtGQ0pZczJKSlJrY3kzcU1Ea0hJaDFQRmsK",
+      "endpoints": [
+        "https://github.com/sindus/light-gen-subZ/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
