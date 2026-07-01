@@ -49,25 +49,19 @@ impl SttEngine for LocalWhisperEngine {
             .full(params, &samples)
             .context("whisper transcription failed")?;
 
-        let num_segments = state.full_n_segments().context("reading segment count")?;
+        let num_segments = state.full_n_segments();
         let mut segments = Vec::with_capacity(num_segments as usize);
         for i in 0..num_segments {
-            let text = state
-                .full_get_segment_text(i)
-                .context("reading segment text")?;
-            let t0 = state.full_get_segment_t0(i).context("reading t0")?;
-            let t1 = state.full_get_segment_t1(i).context("reading t1")?;
+            let seg = state.get_segment(i).context("reading segment")?;
+            let text = seg.to_str().context("reading segment text")?;
             segments.push(Segment {
-                start: t0 as f64 / 100.0,
-                end: t1 as f64 / 100.0,
+                start: seg.start_timestamp() as f64 / 100.0,
+                end: seg.end_timestamp() as f64 / 100.0,
                 text: text.trim().to_string(),
             });
         }
 
-        let language = state
-            .full_lang_id_from_state()
-            .ok()
-            .and_then(|id| whisper_rs::get_lang_str(id))
+        let language = whisper_rs::get_lang_str(state.full_lang_id_from_state())
             .unwrap_or("unknown")
             .to_string();
 
