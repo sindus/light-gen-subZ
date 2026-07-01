@@ -198,6 +198,13 @@
         flex-wrap: wrap;
       }
 
+      .section-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin: 40px 0 12px;
+      }
+
       footer {
         margin-top: 64px;
         padding-top: 24px;
@@ -221,6 +228,8 @@
         <li><strong>Multilingual</strong>Automatic language detection</li>
         <li><strong>Standard output</strong>.srt, works in any editor</li>
         <li><strong>Native</strong>Small, fast Tauri + Rust app</li>
+        <li><strong>Optional cloud STT</strong>Groq, OpenAI, Deepgram, AssemblyAI</li>
+        <li><strong>Optional translation</strong>Local NLLB-200, DeepL, OpenAI, Google, Azure</li>
       </ul>
 
       <div role="tablist" class="tabs" aria-label="Installation instructions">
@@ -250,6 +259,20 @@
           <button class="copy-btn" data-copy-target="cmd-mac">Copy</button>
         </div>
         <p class="panel-note">Apple Silicon only for now. Requires Homebrew and ffmpeg (<code>brew install ffmpeg</code>).</p>
+      </section>
+
+      <h2 class="section-title">Uninstall</h2>
+      <section class="panel">
+        <p class="panel-note" style="margin-top: 0">
+          <strong>Linux (.deb):</strong> <code>sudo apt remove light-gen-sub-z</code><br />
+          <strong>Linux (AppImage):</strong> <code>rm ~/.local/bin/light-gen-subz.AppImage</code
+          ><br />
+          <strong>macOS:</strong> <code>brew uninstall --cask --zap light-gen-subz</code>
+        </p>
+        <p class="panel-note">
+          See the <a href="https://github.com/sindus/light-gen-subZ#uninstall">README</a> for how
+          to also remove downloaded models and settings.
+        </p>
       </section>
 
       <div class="links">

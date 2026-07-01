@@ -1,8 +1,12 @@
-pub mod cloud_whisper;
+pub mod assemblyai;
+pub mod deepgram;
 pub mod local_whisper;
+pub mod openai_compatible;
 
-pub use cloud_whisper::CloudWhisperEngine;
+pub use assemblyai::AssemblyAiEngine;
+pub use deepgram::DeepgramEngine;
 pub use local_whisper::LocalWhisperEngine;
+pub use openai_compatible::OpenAiCompatibleWhisperEngine;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Segment {

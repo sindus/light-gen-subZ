@@ -35,12 +35,13 @@ type Cue = {
   text: string;
 };
 
-type SttEngineChoice = "local" | "cloud";
-type TranslationEngineChoice = "none" | "local" | "cloud";
+type SttEngineChoice = "local" | "groq" | "open_ai" | "deepgram" | "assembly_ai";
+type TranslationEngineChoice = "none" | "local" | "deep_l" | "open_ai" | "google" | "azure";
 
 type Settings = {
   stt_engine: SttEngineChoice;
   translation_engine: TranslationEngineChoice;
+  azure_translator_region: string;
 };
 
 type LanguageInfo = {
@@ -48,6 +49,47 @@ type LanguageInfo = {
   flores_code: string;
   name: string;
 };
+
+type EngineOption<T extends string> = {
+  value: T;
+  label: string;
+  keyName?: string;
+  keyPlaceholder?: string;
+  needsRegion?: boolean;
+};
+
+const STT_ENGINES: EngineOption<SttEngineChoice>[] = [
+  { value: "local", label: "Local (offline, whisper.cpp)" },
+  { value: "groq", label: "Groq (cloud)", keyName: "groq_api_key", keyPlaceholder: "gsk_..." },
+  { value: "open_ai", label: "OpenAI (cloud)", keyName: "openai_api_key", keyPlaceholder: "sk-..." },
+  { value: "deepgram", label: "Deepgram (cloud)", keyName: "deepgram_api_key", keyPlaceholder: "API key" },
+  {
+    value: "assembly_ai",
+    label: "AssemblyAI (cloud)",
+    keyName: "assemblyai_api_key",
+    keyPlaceholder: "API key",
+  },
+];
+
+const TRANSLATION_ENGINES: EngineOption<TranslationEngineChoice>[] = [
+  { value: "none", label: "Off" },
+  { value: "local", label: "Local (offline, NLLB-200)" },
+  { value: "deep_l", label: "DeepL (cloud)", keyName: "deepl_api_key", keyPlaceholder: "xxxxxxxx-...:fx" },
+  { value: "open_ai", label: "OpenAI (cloud)", keyName: "openai_api_key", keyPlaceholder: "sk-..." },
+  {
+    value: "google",
+    label: "Google Translate (cloud)",
+    keyName: "google_translate_api_key",
+    keyPlaceholder: "API key",
+  },
+  {
+    value: "azure",
+    label: "Azure Translator (cloud)",
+    keyName: "azure_translator_key",
+    keyPlaceholder: "API key",
+    needsRegion: true,
+  },
+];
 
 const TRANSCRIBE_STAGES: { key: Stage; label: string }[] = [
   { key: "download_model", label: "Model" },
@@ -96,6 +138,40 @@ function CueList({ cues }: { cues: Cue[] }) {
   );
 }
 
+function ApiKeyField({ keyName, placeholder }: { keyName: string; placeholder: string }) {
+  const [value, setValue] = useState("");
+  const [hasKey, setHasKey] = useState(false);
+
+  useEffect(() => {
+    invoke<boolean>("has_api_key", { keyName }).then(setHasKey);
+  }, [keyName]);
+
+  async function saveKey() {
+    if (!value.trim()) return;
+    await invoke("set_api_key", { keyName, value: value.trim() });
+    setHasKey(true);
+    setValue("");
+  }
+
+  return (
+    <div className="settings-row">
+      <span className="settings-label">API key {hasKey && "(saved)"}</span>
+      <div className="cmd-row">
+        <input
+          className="settings-input"
+          type="password"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => setValue(e.currentTarget.value)}
+        />
+        <button className="btn btn-ghost" onClick={saveKey} type="button">
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [inputPath, setInputPath] = useState<string | null>(null);
   const [progress, setProgress] = useState<PipelineProgress | null>(null);
@@ -106,10 +182,6 @@ function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageInfo[]>([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [groqKeyInput, setGroqKeyInput] = useState("");
-  const [deeplKeyInput, setDeeplKeyInput] = useState("");
-  const [hasGroqKey, setHasGroqKey] = useState(false);
-  const [hasDeeplKey, setHasDeeplKey] = useState(false);
 
   const [sourceLang, setSourceLang] = useState("auto");
   const [targetLang, setTargetLang] = useState("en");
@@ -129,8 +201,6 @@ function App() {
   useEffect(() => {
     invoke<Settings>("get_settings").then(setSettings);
     invoke<LanguageInfo[]>("list_languages").then(setLanguages);
-    invoke<boolean>("has_api_key", { keyName: "groq_api_key" }).then(setHasGroqKey);
-    invoke<boolean>("has_api_key", { keyName: "deepl_api_key" }).then(setHasDeeplKey);
   }, []);
 
   const cues = useMemo(() => (result ? parseSrt(result.srt_content) : []), [result]);
@@ -141,13 +211,19 @@ function App() {
 
   const transcribeStages = useMemo(
     () =>
-      settings?.stt_engine === "cloud"
-        ? TRANSCRIBE_STAGES.filter((s) => s.key !== "download_model")
-        : TRANSCRIBE_STAGES,
+      settings?.stt_engine === "local"
+        ? TRANSCRIBE_STAGES
+        : TRANSCRIBE_STAGES.filter((s) => s.key !== "download_model"),
     [settings],
   );
   const stageIndex = progress ? transcribeStages.findIndex((s) => s.key === progress.stage) : -1;
-  const isTranslateStage = progress?.stage === "translate" || progress?.stage === "download_translation_model";
+  const isTranslateStage =
+    progress?.stage === "translate" || progress?.stage === "download_translation_model";
+
+  const currentSttEngine = STT_ENGINES.find((o) => o.value === settings?.stt_engine);
+  const currentTranslationEngine = TRANSLATION_ENGINES.find(
+    (o) => o.value === settings?.translation_engine,
+  );
 
   async function pickFile() {
     const path = await invoke<string | null>("pick_file");
@@ -231,20 +307,6 @@ function App() {
     await invoke("set_settings", { settings: next });
   }
 
-  async function saveGroqKey() {
-    if (!groqKeyInput.trim()) return;
-    await invoke("set_api_key", { keyName: "groq_api_key", value: groqKeyInput.trim() });
-    setHasGroqKey(true);
-    setGroqKeyInput("");
-  }
-
-  async function saveDeeplKey() {
-    if (!deeplKeyInput.trim()) return;
-    await invoke("set_api_key", { keyName: "deepl_api_key", value: deeplKeyInput.trim() });
-    setHasDeeplKey(true);
-    setDeeplKeyInput("");
-  }
-
   const status: "idle" | "running" | "done" | "error" = error
     ? "error"
     : running
@@ -292,82 +354,61 @@ function App() {
         <div className="panel settings-panel">
           <div className="settings-row">
             <span className="settings-label">Transcription engine</span>
-            <div className="segmented">
-              <button
-                className={settings.stt_engine === "local" ? "segmented-active" : ""}
-                onClick={() => updateSettings({ stt_engine: "local" })}
-                type="button"
-              >
-                Local (offline)
-              </button>
-              <button
-                className={settings.stt_engine === "cloud" ? "segmented-active" : ""}
-                onClick={() => updateSettings({ stt_engine: "cloud" })}
-                type="button"
-              >
-                Cloud (Groq)
-              </button>
-            </div>
+            <select
+              className="settings-select"
+              value={settings.stt_engine}
+              onChange={(e) =>
+                updateSettings({ stt_engine: e.currentTarget.value as SttEngineChoice })
+              }
+            >
+              {STT_ENGINES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
-          {settings.stt_engine === "cloud" && (
-            <div className="settings-row">
-              <span className="settings-label">Groq API key {hasGroqKey && "(saved)"}</span>
-              <div className="cmd-row">
-                <input
-                  className="settings-input"
-                  type="password"
-                  placeholder="gsk_..."
-                  value={groqKeyInput}
-                  onChange={(e) => setGroqKeyInput(e.currentTarget.value)}
-                />
-                <button className="btn btn-ghost" onClick={saveGroqKey} type="button">
-                  Save
-                </button>
-              </div>
-            </div>
+          {currentSttEngine?.keyName && (
+            <ApiKeyField
+              keyName={currentSttEngine.keyName}
+              placeholder={currentSttEngine.keyPlaceholder ?? ""}
+            />
           )}
 
           <div className="settings-row">
             <span className="settings-label">Translation</span>
-            <div className="segmented">
-              <button
-                className={settings.translation_engine === "none" ? "segmented-active" : ""}
-                onClick={() => updateSettings({ translation_engine: "none" })}
-                type="button"
-              >
-                Off
-              </button>
-              <button
-                className={settings.translation_engine === "local" ? "segmented-active" : ""}
-                onClick={() => updateSettings({ translation_engine: "local" })}
-                type="button"
-              >
-                Local (offline)
-              </button>
-              <button
-                className={settings.translation_engine === "cloud" ? "segmented-active" : ""}
-                onClick={() => updateSettings({ translation_engine: "cloud" })}
-                type="button"
-              >
-                Cloud (DeepL)
-              </button>
-            </div>
+            <select
+              className="settings-select"
+              value={settings.translation_engine}
+              onChange={(e) =>
+                updateSettings({
+                  translation_engine: e.currentTarget.value as TranslationEngineChoice,
+                })
+              }
+            >
+              {TRANSLATION_ENGINES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
-          {settings.translation_engine === "cloud" && (
+          {currentTranslationEngine?.keyName && (
+            <ApiKeyField
+              keyName={currentTranslationEngine.keyName}
+              placeholder={currentTranslationEngine.keyPlaceholder ?? ""}
+            />
+          )}
+          {currentTranslationEngine?.needsRegion && (
             <div className="settings-row">
-              <span className="settings-label">DeepL API key {hasDeeplKey && "(saved)"}</span>
-              <div className="cmd-row">
-                <input
-                  className="settings-input"
-                  type="password"
-                  placeholder="xxxxxxxx-xxxx-...:fx"
-                  value={deeplKeyInput}
-                  onChange={(e) => setDeeplKeyInput(e.currentTarget.value)}
-                />
-                <button className="btn btn-ghost" onClick={saveDeeplKey} type="button">
-                  Save
-                </button>
-              </div>
+              <span className="settings-label">Azure region</span>
+              <input
+                className="settings-input settings-input-boxed"
+                type="text"
+                placeholder="westeurope"
+                value={settings.azure_translator_region}
+                onChange={(e) => updateSettings({ azure_translator_region: e.currentTarget.value })}
+              />
             </div>
           )}
         </div>
@@ -476,7 +517,7 @@ function App() {
                 onChange={(e) => setSourceLang(e.currentTarget.value)}
               >
                 <option value="auto">
-                  Auto{settings?.translation_engine === "cloud" ? " (detect)" : " (use detected)"}
+                  Auto{settings?.translation_engine === "local" ? " (use detected)" : " (detect)"}
                 </option>
                 {languages.map((l) => (
                   <option key={l.code} value={l.code}>

@@ -5,35 +5,46 @@ use serde::Deserialize;
 
 use super::{Segment, SttEngine, Transcript};
 
-const GROQ_ENDPOINT: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
-const GROQ_MODEL: &str = "whisper-large-v3-turbo";
-
-pub struct CloudWhisperEngine {
+/// Transcription via any OpenAI-Whisper-compatible `/audio/transcriptions` endpoint.
+/// Covers both OpenAI itself and Groq, which expose an identical request/response shape.
+pub struct OpenAiCompatibleWhisperEngine {
+    endpoint: &'static str,
+    model: &'static str,
     api_key: String,
 }
 
-impl CloudWhisperEngine {
-    pub fn new(api_key: impl Into<String>) -> Self {
+impl OpenAiCompatibleWhisperEngine {
+    pub fn groq(api_key: impl Into<String>) -> Self {
         Self {
+            endpoint: "https://api.groq.com/openai/v1/audio/transcriptions",
+            model: "whisper-large-v3-turbo",
+            api_key: api_key.into(),
+        }
+    }
+
+    pub fn openai(api_key: impl Into<String>) -> Self {
+        Self {
+            endpoint: "https://api.openai.com/v1/audio/transcriptions",
+            model: "whisper-1",
             api_key: api_key.into(),
         }
     }
 }
 
 #[derive(Deserialize)]
-struct GroqSegment {
+struct ApiSegment {
     start: f64,
     end: f64,
     text: String,
 }
 
 #[derive(Deserialize)]
-struct GroqResponse {
+struct ApiResponse {
     language: String,
-    segments: Vec<GroqSegment>,
+    segments: Vec<ApiSegment>,
 }
 
-impl SttEngine for CloudWhisperEngine {
+impl SttEngine for OpenAiCompatibleWhisperEngine {
     fn transcribe(
         &self,
         wav_path: &Path,
@@ -48,24 +59,24 @@ impl SttEngine for CloudWhisperEngine {
             .context("building multipart file part")?;
         let form = reqwest::blocking::multipart::Form::new()
             .part("file", part)
-            .text("model", GROQ_MODEL)
+            .text("model", self.model)
             .text("response_format", "verbose_json");
 
         on_progress(0.2);
 
         let client = reqwest::blocking::Client::new();
         let response = client
-            .post(GROQ_ENDPOINT)
+            .post(self.endpoint)
             .bearer_auth(&self.api_key)
             .multipart(form)
             .send()
-            .context("sending request to Groq API")?
+            .with_context(|| format!("sending request to {}", self.endpoint))?
             .error_for_status()
-            .context("Groq API returned an error")?;
+            .with_context(|| format!("{} returned an error", self.endpoint))?;
 
         on_progress(0.9);
 
-        let parsed: GroqResponse = response.json().context("parsing Groq API response")?;
+        let parsed: ApiResponse = response.json().context("parsing API response")?;
 
         on_progress(1.0);
 

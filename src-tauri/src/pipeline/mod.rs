@@ -4,7 +4,7 @@ pub mod stt;
 pub mod subtitle_writer;
 pub mod translate;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -12,8 +12,14 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::config::{self, SttEngineChoice, TranslationEngineChoice};
 use crate::models;
-use stt::{CloudWhisperEngine, LocalWhisperEngine, Segment, SttEngine, Transcript};
-use translate::{CloudDeepLEngine, LocalNllbEngine, TranslationEngine};
+use stt::{
+    AssemblyAiEngine, DeepgramEngine, LocalWhisperEngine, OpenAiCompatibleWhisperEngine, Segment,
+    SttEngine, Transcript,
+};
+use translate::{
+    AzureTranslateEngine, CloudDeepLEngine, GoogleTranslateEngine, LocalNllbEngine,
+    OpenAiTranslateEngine, TranslationEngine,
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineProgress {
@@ -38,7 +44,47 @@ fn emit_progress(app: &AppHandle, stage: &str, fraction: f32) {
     );
 }
 
-/// Orchestrates the full pipeline: audio extraction -> local transcription -> segmentation -> SRT writing.
+fn require_api_key(key_name: &str, provider: &str) -> Result<String> {
+    config::get_api_key(key_name)
+        .with_context(|| format!("reading {provider} API key"))?
+        .with_context(|| format!("no {provider} API key configured — add one in Settings"))
+}
+
+async fn run_stt_engine(
+    engine: Box<dyn SttEngine + Send>,
+    wav_path: PathBuf,
+    app: AppHandle,
+) -> Result<Transcript> {
+    tauri::async_runtime::spawn_blocking(move || {
+        engine.transcribe(
+            &wav_path,
+            Box::new(move |frac| emit_progress(&app, "transcribe", frac)),
+        )
+    })
+    .await
+    .context("transcription task")?
+}
+
+async fn run_translation_engine(
+    engine: Box<dyn TranslationEngine + Send>,
+    texts: Vec<String>,
+    source_lang: Option<String>,
+    target_lang: String,
+    app: AppHandle,
+) -> Result<Vec<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        engine.translate(
+            &texts,
+            source_lang.as_deref(),
+            &target_lang,
+            Box::new(move |frac| emit_progress(&app, "translate", frac)),
+        )
+    })
+    .await
+    .context("translation task")?
+}
+
+/// Orchestrates the full pipeline: audio extraction -> transcription -> segmentation -> SRT writing.
 /// Writes `<source_name>.srt` next to the input file and returns its content.
 pub async fn run(app: AppHandle, input_path: String) -> Result<PipelineOutput> {
     let input = Path::new(&input_path);
@@ -69,30 +115,30 @@ pub async fn run(app: AppHandle, input_path: String) -> Result<PipelineOutput> {
             .context("downloading whisper model")?;
             emit_progress(&app, "download_model", 1.0);
 
-            let engine = LocalWhisperEngine::new(model_path);
-            tauri::async_runtime::spawn_blocking(move || {
-                engine.transcribe(
-                    &wav_path,
-                    Box::new(move |frac| emit_progress(&transcribe_app, "transcribe", frac)),
-                )
-            })
-            .await
-            .context("transcription task")??
+            let engine: Box<dyn SttEngine + Send> = Box::new(LocalWhisperEngine::new(model_path));
+            run_stt_engine(engine, wav_path, transcribe_app).await?
         }
-        SttEngineChoice::Cloud => {
-            let api_key = config::get_api_key(config::GROQ_API_KEY)
-                .context("reading Groq API key")?
-                .context("no Groq API key configured — add one in Settings")?;
-
-            let engine = CloudWhisperEngine::new(api_key);
-            tauri::async_runtime::spawn_blocking(move || {
-                engine.transcribe(
-                    &wav_path,
-                    Box::new(move |frac| emit_progress(&transcribe_app, "transcribe", frac)),
-                )
-            })
-            .await
-            .context("transcription task")??
+        SttEngineChoice::Groq => {
+            let api_key = require_api_key(config::GROQ_API_KEY, "Groq")?;
+            let engine: Box<dyn SttEngine + Send> =
+                Box::new(OpenAiCompatibleWhisperEngine::groq(api_key));
+            run_stt_engine(engine, wav_path, transcribe_app).await?
+        }
+        SttEngineChoice::OpenAi => {
+            let api_key = require_api_key(config::OPENAI_API_KEY, "OpenAI")?;
+            let engine: Box<dyn SttEngine + Send> =
+                Box::new(OpenAiCompatibleWhisperEngine::openai(api_key));
+            run_stt_engine(engine, wav_path, transcribe_app).await?
+        }
+        SttEngineChoice::Deepgram => {
+            let api_key = require_api_key(config::DEEPGRAM_API_KEY, "Deepgram")?;
+            let engine: Box<dyn SttEngine + Send> = Box::new(DeepgramEngine::new(api_key));
+            run_stt_engine(engine, wav_path, transcribe_app).await?
+        }
+        SttEngineChoice::AssemblyAi => {
+            let api_key = require_api_key(config::ASSEMBLYAI_API_KEY, "AssemblyAI")?;
+            let engine: Box<dyn SttEngine + Send> = Box::new(AssemblyAiEngine::new(api_key));
+            run_stt_engine(engine, wav_path, transcribe_app).await?
         }
     };
     emit_progress(&app, "transcribe", 1.0);
@@ -136,22 +182,63 @@ pub async fn translate(
     emit_progress(&app, "translate", 0.0);
     let translate_app = app.clone();
     let translated_texts: Vec<String> = match settings.translation_engine {
-        TranslationEngineChoice::Cloud => {
-            let api_key = config::get_api_key(config::DEEPL_API_KEY)
-                .context("reading DeepL API key")?
-                .context("no DeepL API key configured — add one in Settings")?;
-            let engine = CloudDeepLEngine::new(api_key);
-            let target_lang = target_lang.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                engine.translate(
-                    &texts,
-                    source_lang.as_deref(),
-                    &target_lang,
-                    Box::new(move |frac| emit_progress(&translate_app, "translate", frac)),
-                )
-            })
-            .await
-            .context("translation task")??
+        TranslationEngineChoice::DeepL => {
+            let api_key = require_api_key(config::DEEPL_API_KEY, "DeepL")?;
+            let engine: Box<dyn TranslationEngine + Send> =
+                Box::new(CloudDeepLEngine::new(api_key));
+            run_translation_engine(
+                engine,
+                texts,
+                source_lang,
+                target_lang.clone(),
+                translate_app,
+            )
+            .await?
+        }
+        TranslationEngineChoice::OpenAi => {
+            let api_key = require_api_key(config::OPENAI_API_KEY, "OpenAI")?;
+            let engine: Box<dyn TranslationEngine + Send> =
+                Box::new(OpenAiTranslateEngine::new(api_key));
+            run_translation_engine(
+                engine,
+                texts,
+                source_lang,
+                target_lang.clone(),
+                translate_app,
+            )
+            .await?
+        }
+        TranslationEngineChoice::Google => {
+            let api_key = require_api_key(config::GOOGLE_TRANSLATE_API_KEY, "Google Translate")?;
+            let engine: Box<dyn TranslationEngine + Send> =
+                Box::new(GoogleTranslateEngine::new(api_key));
+            run_translation_engine(
+                engine,
+                texts,
+                source_lang,
+                target_lang.clone(),
+                translate_app,
+            )
+            .await?
+        }
+        TranslationEngineChoice::Azure => {
+            let api_key = require_api_key(config::AZURE_TRANSLATOR_KEY, "Azure Translator")?;
+            anyhow::ensure!(
+                !settings.azure_translator_region.is_empty(),
+                "Azure Translator region not configured — add it in Settings"
+            );
+            let engine: Box<dyn TranslationEngine + Send> = Box::new(AzureTranslateEngine::new(
+                api_key,
+                settings.azure_translator_region.clone(),
+            ));
+            run_translation_engine(
+                engine,
+                texts,
+                source_lang,
+                target_lang.clone(),
+                translate_app,
+            )
+            .await?
         }
         TranslationEngineChoice::Local => {
             emit_progress(&app, "download_translation_model", 0.0);
@@ -163,7 +250,7 @@ pub async fn translate(
             .context("downloading local translation model")?;
             emit_progress(&app, "download_translation_model", 1.0);
 
-            let target_lang = target_lang.clone();
+            let target_lang_inner = target_lang.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>> {
                 let engine =
                     LocalNllbEngine::load(&files.encoder, &files.decoder, &files.tokenizer)
@@ -171,7 +258,7 @@ pub async fn translate(
                 engine.translate(
                     &texts,
                     source_lang.as_deref(),
-                    &target_lang,
+                    &target_lang_inner,
                     Box::new(move |frac| emit_progress(&translate_app, "translate", frac)),
                 )
             })

@@ -589,6 +589,14 @@ button {
   padding: 0;
 }
 
+.settings-input.settings-input-boxed {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  width: fit-content;
+}
+
 /* ---------- translate panel ---------- */
 
 .translate-panel {

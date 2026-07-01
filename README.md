@@ -5,10 +5,11 @@ an `.srt` with accurate timestamps — fully offline, powered by a local
 [whisper.cpp](https://github.com/ggerganov/whisper.cpp) model.
 
 - Local speech-to-text, no account, no upload of your media anywhere.
-- Optional cloud transcription (Groq's Whisper API) for speed, if you'd rather not run locally.
+- Optional cloud transcription — Groq, OpenAI, Deepgram, or AssemblyAI — if
+  you'd rather not run locally.
 - Multilingual, auto-detected.
 - Optional subtitle translation, either fully offline (local NLLB-200 model)
-  or via the DeepL API.
+  or via DeepL, OpenAI, Google Translate, or Azure Translator.
 - Standard `.srt` output, ready to drop into any video editor.
 - Native desktop app (Tauri + Rust), small and fast.
 
@@ -45,8 +46,8 @@ Prebuilt binaries are also available on the
   NLLB-200 model (~900 MB).
 - **Linux:** requires glibc ≥ 2.38 (Ubuntu 24.04+, Debian 13+, Fedora 39+),
   needed by the bundled ONNX Runtime used for local translation.
-- Cloud transcription/translation (Groq, DeepL) require an API key, entered
-  in the app's Settings panel and stored in your OS keychain.
+- Cloud engines require an API key from that provider, entered in the app's
+  Settings panel and stored in your OS keychain.
 
 ## Usage
 
@@ -54,6 +55,33 @@ Prebuilt binaries are also available on the
 2. Click **Generate subtitles**.
 3. Once done, the `.srt` is written next to your source file and previewed
    in the app. Use **Save as…** to save it elsewhere.
+
+## Uninstall
+
+### Linux
+
+```sh
+# .deb install
+sudo apt remove light-gen-sub-z
+
+# AppImage install
+rm ~/.local/bin/light-gen-subz.AppImage
+```
+
+To also remove downloaded models and settings:
+
+```sh
+rm -rf ~/.local/share/light-gen-subZ ~/.config/light-gen-subZ
+```
+
+### macOS
+
+```sh
+brew uninstall --cask --zap light-gen-subz
+brew untap sindus/light-gen-subz
+```
+
+`--zap` also removes downloaded models, settings, and cached data.
 
 ## Build from source
 

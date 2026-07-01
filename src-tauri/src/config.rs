@@ -7,14 +7,22 @@ use serde::{Deserialize, Serialize};
 const SERVICE_NAME: &str = "light-gen-subZ";
 
 pub const GROQ_API_KEY: &str = "groq_api_key";
+pub const OPENAI_API_KEY: &str = "openai_api_key";
+pub const DEEPGRAM_API_KEY: &str = "deepgram_api_key";
+pub const ASSEMBLYAI_API_KEY: &str = "assemblyai_api_key";
 pub const DEEPL_API_KEY: &str = "deepl_api_key";
+pub const GOOGLE_TRANSLATE_API_KEY: &str = "google_translate_api_key";
+pub const AZURE_TRANSLATOR_KEY: &str = "azure_translator_key";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SttEngineChoice {
     #[default]
     Local,
-    Cloud,
+    Groq,
+    OpenAi,
+    Deepgram,
+    AssemblyAi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -23,13 +31,19 @@ pub enum TranslationEngineChoice {
     #[default]
     None,
     Local,
-    Cloud,
+    DeepL,
+    OpenAi,
+    Google,
+    Azure,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Settings {
     pub stt_engine: SttEngineChoice,
     pub translation_engine: TranslationEngineChoice,
+    /// Azure Translator requires a resource region alongside its API key (not a secret).
+    #[serde(default)]
+    pub azure_translator_region: String,
 }
 
 fn settings_path() -> Result<PathBuf> {
