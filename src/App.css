@@ -494,6 +494,131 @@ button {
   background: transparent;
 }
 
+/* ---------- header icon button ---------- */
+
+.btn-icon {
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  border-radius: 6px;
+}
+
+.btn-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.btn-icon:hover {
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.app-status + .btn-icon {
+  margin-left: 12px;
+}
+
+/* ---------- settings panel ---------- */
+
+.settings-panel {
+  width: 100%;
+  max-width: 620px;
+  margin: 16px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.segmented button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented-active {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.settings-input,
+.settings-select {
+  font-family: inherit;
+  font-size: 13px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.settings-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* ---------- translate panel ---------- */
+
+.translate-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.translate-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.translate-arrow {
+  color: var(--text-faint);
+}
+
+.translate-btn {
+  width: auto;
+  margin-left: auto;
+}
+
+.error-inline {
+  color: var(--danger);
+  font-size: 12.5px;
+  margin: 0;
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 480px) {

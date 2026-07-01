@@ -1,5 +1,7 @@
+pub mod cloud_whisper;
 pub mod local_whisper;
 
+pub use cloud_whisper::CloudWhisperEngine;
 pub use local_whisper::LocalWhisperEngine;
 
 #[derive(Debug, Clone, serde::Serialize)]

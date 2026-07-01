@@ -1,5 +1,39 @@
 use crate::pipeline::stt::Segment;
 
+/// Parses SRT text back into cues (inverse of [`to_srt`]).
+pub fn parse_srt(content: &str) -> Vec<Segment> {
+    content
+        .replace("\r\n", "\n")
+        .split("\n\n")
+        .filter_map(|block| {
+            let mut lines = block.lines();
+            lines.next()?; // sequence number, unused
+            let timing = lines.next()?;
+            let (start, end) = timing.split_once(" --> ")?;
+            let text = lines.collect::<Vec<_>>().join(" ");
+            if text.is_empty() {
+                return None;
+            }
+            Some(Segment {
+                start: parse_timestamp(start)?,
+                end: parse_timestamp(end)?,
+                text,
+            })
+        })
+        .collect()
+}
+
+fn parse_timestamp(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let (hms, ms) = s.split_once(',')?;
+    let mut parts = hms.split(':');
+    let hours: f64 = parts.next()?.parse().ok()?;
+    let mins: f64 = parts.next()?.parse().ok()?;
+    let secs: f64 = parts.next()?.parse().ok()?;
+    let millis: f64 = ms.parse().ok()?;
+    Some(hours * 3600.0 + mins * 60.0 + secs + millis / 1000.0)
+}
+
 /// Sérialise une liste de cues en texte au format SRT.
 pub fn to_srt(cues: &[Segment]) -> String {
     let mut out = String::new();
@@ -56,5 +90,27 @@ mod tests {
         let srt = to_srt(&cues);
         assert!(srt.starts_with("1\n00:00:00,000 --> 00:00:01,500\nBonjour.\n\n"));
         assert!(srt.contains("2\n00:00:01,500 --> 00:00:03,000\nComment ça va ?\n\n"));
+    }
+
+    #[test]
+    fn parse_srt_round_trips() {
+        let cues = vec![
+            Segment {
+                start: 0.0,
+                end: 1.5,
+                text: "Bonjour.".into(),
+            },
+            Segment {
+                start: 1.5,
+                end: 3.25,
+                text: "Comment ça va ?".into(),
+            },
+        ];
+        let srt = to_srt(&cues);
+        let parsed = parse_srt(&srt);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].text, "Bonjour.");
+        assert!((parsed[0].start - 0.0).abs() < 1e-6);
+        assert!((parsed[1].end - 3.25).abs() < 1e-6);
     }
 }

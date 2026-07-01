@@ -1,4 +1,5 @@
 mod commands;
+mod config;
 mod models;
 mod pipeline;
 
@@ -12,6 +13,12 @@ pub fn run() {
             commands::run_pipeline,
             commands::list_models,
             commands::save_subtitle,
+            commands::translate_subtitles,
+            commands::list_languages,
+            commands::get_settings,
+            commands::set_settings,
+            commands::set_api_key,
+            commands::has_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

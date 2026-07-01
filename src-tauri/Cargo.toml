@@ -27,8 +27,16 @@ anyhow = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "sync"] }
 whisper-rs = "0.16"
 sha2 = "0.10"
-reqwest = { version = "0.12", features = ["stream"] }
+reqwest = { version = "0.12", features = ["stream", "blocking", "multipart", "json"] }
 futures-util = "0.3"
 hound = "3"
 dirs = "5"
+ort = "2.0.0-rc.12"
+tokenizers = "0.20"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
 

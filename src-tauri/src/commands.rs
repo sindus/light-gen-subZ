@@ -1,8 +1,10 @@
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::config::{self, Settings};
 use crate::models;
-use crate::pipeline::{self, PipelineOutput};
+use crate::pipeline::translate::languages::LANGUAGES;
+use crate::pipeline::{self, PipelineOutput, TranslationOutput};
 
 const MEDIA_EXTENSIONS: &[&str] = &[
     "mp4", "mkv", "mov", "avi", "webm", "mp3", "wav", "m4a", "flac", "ogg",
@@ -39,4 +41,42 @@ pub fn list_models() -> Vec<models::ModelInfo> {
 #[tauri::command]
 pub fn save_subtitle(dest_path: String, content: String) -> Result<(), String> {
     std::fs::write(&dest_path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn translate_subtitles(
+    app: AppHandle,
+    srt_path: String,
+    srt_content: String,
+    source_lang: Option<String>,
+    target_lang: String,
+) -> Result<TranslationOutput, String> {
+    pipeline::translate(app, srt_path, srt_content, source_lang, target_lang)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_languages() -> &'static [crate::pipeline::translate::languages::Language] {
+    LANGUAGES
+}
+
+#[tauri::command]
+pub fn get_settings() -> Settings {
+    config::load_settings().unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn set_settings(settings: Settings) -> Result<(), String> {
+    config::save_settings(&settings).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_api_key(key_name: String, value: String) -> Result<(), String> {
+    config::set_api_key(&key_name, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn has_api_key(key_name: String) -> bool {
+    config::has_api_key(&key_name)
 }

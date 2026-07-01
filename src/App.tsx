@@ -4,7 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
-type Stage = "download_model" | "extract_audio" | "transcribe" | "write_subtitles";
+type Stage =
+  | "download_model"
+  | "extract_audio"
+  | "transcribe"
+  | "write_subtitles"
+  | "download_translation_model"
+  | "translate";
 
 type PipelineProgress = {
   stage: Stage;
@@ -17,6 +23,11 @@ type PipelineOutput = {
   language: string;
 };
 
+type TranslationOutput = {
+  srt_path: string;
+  srt_content: string;
+};
+
 type Cue = {
   index: number;
   start: string;
@@ -24,7 +35,21 @@ type Cue = {
   text: string;
 };
 
-const STAGES: { key: Stage; label: string }[] = [
+type SttEngineChoice = "local" | "cloud";
+type TranslationEngineChoice = "none" | "local" | "cloud";
+
+type Settings = {
+  stt_engine: SttEngineChoice;
+  translation_engine: TranslationEngineChoice;
+};
+
+type LanguageInfo = {
+  code: string;
+  flores_code: string;
+  name: string;
+};
+
+const TRANSCRIBE_STAGES: { key: Stage; label: string }[] = [
   { key: "download_model", label: "Model" },
   { key: "extract_audio", label: "Audio" },
   { key: "transcribe", label: "Transcript" },
@@ -53,12 +78,44 @@ function parseSrt(content: string): Cue[] {
     .filter((cue) => cue.text.length > 0);
 }
 
+function CueList({ cues }: { cues: Cue[] }) {
+  return (
+    <ol className="cue-list">
+      {cues.map((cue) => (
+        <li className="cue" key={cue.index}>
+          <span className="cue-index">{cue.index}</span>
+          <div className="cue-body">
+            <span className="cue-time">
+              {cue.start} <span className="cue-arrow">→</span> {cue.end}
+            </span>
+            <p className="cue-text">{cue.text}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function App() {
   const [inputPath, setInputPath] = useState<string | null>(null);
   const [progress, setProgress] = useState<PipelineProgress | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PipelineOutput | null>(null);
+
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [languages, setLanguages] = useState<LanguageInfo[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [groqKeyInput, setGroqKeyInput] = useState("");
+  const [deeplKeyInput, setDeeplKeyInput] = useState("");
+  const [hasGroqKey, setHasGroqKey] = useState(false);
+  const [hasDeeplKey, setHasDeeplKey] = useState(false);
+
+  const [sourceLang, setSourceLang] = useState("auto");
+  const [targetLang, setTargetLang] = useState("en");
+  const [translating, setTranslating] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [translation, setTranslation] = useState<TranslationOutput | null>(null);
 
   useEffect(() => {
     const unlisten = listen<PipelineProgress>("pipeline-progress", (event) => {
@@ -69,8 +126,28 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    invoke<Settings>("get_settings").then(setSettings);
+    invoke<LanguageInfo[]>("list_languages").then(setLanguages);
+    invoke<boolean>("has_api_key", { keyName: "groq_api_key" }).then(setHasGroqKey);
+    invoke<boolean>("has_api_key", { keyName: "deepl_api_key" }).then(setHasDeeplKey);
+  }, []);
+
   const cues = useMemo(() => (result ? parseSrt(result.srt_content) : []), [result]);
-  const stageIndex = progress ? STAGES.findIndex((s) => s.key === progress.stage) : -1;
+  const translatedCues = useMemo(
+    () => (translation ? parseSrt(translation.srt_content) : []),
+    [translation],
+  );
+
+  const transcribeStages = useMemo(
+    () =>
+      settings?.stt_engine === "cloud"
+        ? TRANSCRIBE_STAGES.filter((s) => s.key !== "download_model")
+        : TRANSCRIBE_STAGES,
+    [settings],
+  );
+  const stageIndex = progress ? transcribeStages.findIndex((s) => s.key === progress.stage) : -1;
+  const isTranslateStage = progress?.stage === "translate" || progress?.stage === "download_translation_model";
 
   async function pickFile() {
     const path = await invoke<string | null>("pick_file");
@@ -78,6 +155,8 @@ function App() {
       setInputPath(path);
       setResult(null);
       setError(null);
+      setTranslation(null);
+      setTranslationError(null);
     }
   }
 
@@ -86,10 +165,15 @@ function App() {
     setRunning(true);
     setError(null);
     setResult(null);
+    setTranslation(null);
+    setTranslationError(null);
     setProgress(null);
     try {
       const output = await invoke<PipelineOutput>("run_pipeline", { inputPath });
       setResult(output);
+      if (output.language) {
+        setSourceLang(output.language.slice(0, 2).toLowerCase());
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -106,6 +190,59 @@ function App() {
     if (dest) {
       await invoke("save_subtitle", { destPath: dest, content: result.srt_content });
     }
+  }
+
+  async function saveTranslationAs() {
+    if (!translation) return;
+    const dest = await save({
+      defaultPath: translation.srt_path,
+      filters: [{ name: "SRT subtitles", extensions: ["srt"] }],
+    });
+    if (dest) {
+      await invoke("save_subtitle", { destPath: dest, content: translation.srt_content });
+    }
+  }
+
+  async function runTranslation() {
+    if (!result) return;
+    setTranslating(true);
+    setTranslationError(null);
+    setTranslation(null);
+    setProgress(null);
+    try {
+      const output = await invoke<TranslationOutput>("translate_subtitles", {
+        srtPath: result.srt_path,
+        srtContent: result.srt_content,
+        sourceLang: sourceLang === "auto" ? null : sourceLang,
+        targetLang,
+      });
+      setTranslation(output);
+    } catch (e) {
+      setTranslationError(String(e));
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  async function updateSettings(patch: Partial<Settings>) {
+    if (!settings) return;
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    await invoke("set_settings", { settings: next });
+  }
+
+  async function saveGroqKey() {
+    if (!groqKeyInput.trim()) return;
+    await invoke("set_api_key", { keyName: "groq_api_key", value: groqKeyInput.trim() });
+    setHasGroqKey(true);
+    setGroqKeyInput("");
+  }
+
+  async function saveDeeplKey() {
+    if (!deeplKeyInput.trim()) return;
+    await invoke("set_api_key", { keyName: "deepl_api_key", value: deeplKeyInput.trim() });
+    setHasDeeplKey(true);
+    setDeeplKeyInput("");
   }
 
   const status: "idle" | "running" | "done" | "error" = error
@@ -129,7 +266,112 @@ function App() {
         <span className={`status-dot status-dot--${status}`} aria-hidden="true" />
         <span className="app-mark">Subtitles</span>
         <span className="app-status">{statusLabel[status]}</span>
+        <button
+          className="btn-icon"
+          onClick={() => setShowSettings((v) => !v)}
+          type="button"
+          aria-label="Settings"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            />
+            <path
+              d="M19.4 13a7.4 7.4 0 0 0 0-2l1.9-1.5-2-3.4-2.2.9a7.6 7.6 0 0 0-1.7-1L15 3.6h-6l-.4 2.4a7.6 7.6 0 0 0-1.7 1l-2.2-.9-2 3.4L4.6 11a7.4 7.4 0 0 0 0 2l-1.9 1.5 2 3.4 2.2-.9a7.6 7.6 0 0 0 1.7 1l.4 2.4h6l.4-2.4a7.6 7.6 0 0 0 1.7-1l2.2.9 2-3.4L19.4 13Z"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
       </header>
+
+      {showSettings && settings && (
+        <div className="panel settings-panel">
+          <div className="settings-row">
+            <span className="settings-label">Transcription engine</span>
+            <div className="segmented">
+              <button
+                className={settings.stt_engine === "local" ? "segmented-active" : ""}
+                onClick={() => updateSettings({ stt_engine: "local" })}
+                type="button"
+              >
+                Local (offline)
+              </button>
+              <button
+                className={settings.stt_engine === "cloud" ? "segmented-active" : ""}
+                onClick={() => updateSettings({ stt_engine: "cloud" })}
+                type="button"
+              >
+                Cloud (Groq)
+              </button>
+            </div>
+          </div>
+          {settings.stt_engine === "cloud" && (
+            <div className="settings-row">
+              <span className="settings-label">Groq API key {hasGroqKey && "(saved)"}</span>
+              <div className="cmd-row">
+                <input
+                  className="settings-input"
+                  type="password"
+                  placeholder="gsk_..."
+                  value={groqKeyInput}
+                  onChange={(e) => setGroqKeyInput(e.currentTarget.value)}
+                />
+                <button className="btn btn-ghost" onClick={saveGroqKey} type="button">
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="settings-row">
+            <span className="settings-label">Translation</span>
+            <div className="segmented">
+              <button
+                className={settings.translation_engine === "none" ? "segmented-active" : ""}
+                onClick={() => updateSettings({ translation_engine: "none" })}
+                type="button"
+              >
+                Off
+              </button>
+              <button
+                className={settings.translation_engine === "local" ? "segmented-active" : ""}
+                onClick={() => updateSettings({ translation_engine: "local" })}
+                type="button"
+              >
+                Local (offline)
+              </button>
+              <button
+                className={settings.translation_engine === "cloud" ? "segmented-active" : ""}
+                onClick={() => updateSettings({ translation_engine: "cloud" })}
+                type="button"
+              >
+                Cloud (DeepL)
+              </button>
+            </div>
+          </div>
+          {settings.translation_engine === "cloud" && (
+            <div className="settings-row">
+              <span className="settings-label">DeepL API key {hasDeeplKey && "(saved)"}</span>
+              <div className="cmd-row">
+                <input
+                  className="settings-input"
+                  type="password"
+                  placeholder="xxxxxxxx-xxxx-...:fx"
+                  value={deeplKeyInput}
+                  onChange={(e) => setDeeplKeyInput(e.currentTarget.value)}
+                />
+                <button className="btn btn-ghost" onClick={saveDeeplKey} type="button">
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="app-body">
         {!inputPath && (
@@ -174,10 +416,10 @@ function App() {
           </button>
         )}
 
-        {running && (
+        {running && !isTranslateStage && (
           <div className="panel progress-panel">
             <ol className="stepper">
-              {STAGES.map((stage, i) => (
+              {transcribeStages.map((stage, i) => (
                 <li
                   key={stage.key}
                   className={
@@ -221,19 +463,76 @@ function App() {
               </button>
             </div>
 
-            <ol className="cue-list">
-              {cues.map((cue) => (
-                <li className="cue" key={cue.index}>
-                  <span className="cue-index">{cue.index}</span>
-                  <div className="cue-body">
-                    <span className="cue-time">
-                      {cue.start} <span className="cue-arrow">→</span> {cue.end}
-                    </span>
-                    <p className="cue-text">{cue.text}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <CueList cues={cues} />
+          </div>
+        )}
+
+        {result && settings?.translation_engine !== "none" && (
+          <div className="panel translate-panel">
+            <div className="translate-controls">
+              <select
+                className="settings-select"
+                value={sourceLang}
+                onChange={(e) => setSourceLang(e.currentTarget.value)}
+              >
+                <option value="auto">
+                  Auto{settings?.translation_engine === "cloud" ? " (detect)" : " (use detected)"}
+                </option>
+                {languages.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <span className="translate-arrow">→</span>
+              <select
+                className="settings-select"
+                value={targetLang}
+                onChange={(e) => setTargetLang(e.currentTarget.value)}
+              >
+                {languages.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="btn btn-primary translate-btn"
+                onClick={runTranslation}
+                disabled={translating}
+                type="button"
+              >
+                {translating ? "Translating…" : "Translate"}
+              </button>
+            </div>
+
+            {translating && isTranslateStage && (
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${Math.round((progress?.fraction ?? 0) * 100)}%` }}
+                />
+              </div>
+            )}
+
+            {translationError && (
+              <p className="error-inline">Translation failed: {translationError}</p>
+            )}
+
+            {translation && (
+              <>
+                <div className="result-summary">
+                  <span className="pill">{targetLang.toUpperCase()}</span>
+                  <span className="result-path" title={translation.srt_path}>
+                    {translation.srt_path}
+                  </span>
+                  <button className="btn btn-ghost" onClick={saveTranslationAs} type="button">
+                    Save as…
+                  </button>
+                </div>
+                <CueList cues={translatedCues} />
+              </>
+            )}
           </div>
         )}
       </div>
