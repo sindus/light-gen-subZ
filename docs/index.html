@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>light-gen-subZ — offline subtitles from any video or audio</title>
+    <meta
+      name="description"
+      content="Turn a video or audio file into an .srt subtitle track, fully offline, powered by a local whisper.cpp model."
+    />
+    <style>
+      :root {
+        --bg: #121317;
+        --surface: #1b1d23;
+        --surface-raised: #22242b;
+        --border: #2b2e36;
+        --text: #f1f2f5;
+        --text-muted: #90939f;
+        --text-faint: #5b5e68;
+        --accent: #ffb454;
+        --accent-strong: #ff9d33;
+        --accent-ink: #4a2f08;
+        --success: #63d2a0;
+
+        --font-body: Inter, ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif;
+        --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 72px 24px 64px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+
+      .eyebrow-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      h1 {
+        font-size: clamp(32px, 5vw, 44px);
+        line-height: 1.1;
+        margin: 18px 0 12px;
+        letter-spacing: -0.01em;
+      }
+
+      .lede {
+        font-size: 17px;
+        color: var(--text-muted);
+        max-width: 46ch;
+        margin: 0 0 40px;
+      }
+
+      .features {
+        list-style: none;
+        margin: 0 0 48px;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+      }
+
+      .features li {
+        font-size: 13px;
+        color: var(--text-muted);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+
+      .features strong {
+        display: block;
+        color: var(--text);
+        font-size: 14px;
+        margin-bottom: 2px;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: -1px;
+      }
+
+      .tab {
+        appearance: none;
+        border: 1px solid var(--border);
+        border-bottom: none;
+        background: var(--surface);
+        color: var(--text-muted);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 10px 16px;
+        border-radius: 10px 10px 0 0;
+        cursor: pointer;
+      }
+
+      .tab[aria-selected="true"] {
+        color: var(--text);
+        background: var(--surface-raised);
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 0 12px 12px 12px;
+        background: var(--surface-raised);
+        padding: 22px;
+      }
+
+      .panel[hidden] {
+        display: none;
+      }
+
+      .cmd-row {
+        display: flex;
+        align-items: stretch;
+        gap: 8px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 4px 4px 4px 14px;
+        margin: 4px 0;
+      }
+
+      .cmd-row code {
+        flex: 1;
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        color: var(--success);
+        display: flex;
+        align-items: center;
+        overflow-x: auto;
+        white-space: pre;
+      }
+
+      .copy-btn {
+        appearance: none;
+        border: 1px solid transparent;
+        background: var(--accent);
+        color: var(--accent-ink);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 6px;
+        padding: 0 12px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .copy-btn:hover {
+        background: var(--accent-strong);
+      }
+
+      .panel-note {
+        font-size: 12.5px;
+        color: var(--text-faint);
+        margin: 14px 0 0;
+      }
+
+      .links {
+        margin-top: 48px;
+        display: flex;
+        gap: 20px;
+        font-size: 13.5px;
+        flex-wrap: wrap;
+      }
+
+      footer {
+        margin-top: 64px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-faint);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <span class="eyebrow"><span class="eyebrow-dot"></span>Desktop app · offline</span>
+      <h1>Subtitles from any video or audio, generated locally.</h1>
+      <p class="lede">
+        light-gen-subZ transcribes speech with a local whisper.cpp model and writes a standard
+        <code>.srt</code> file with accurate timestamps — no upload, no account, no cloud.
+      </p>
+
+      <ul class="features">
+        <li><strong>Offline</strong>Your media never leaves your machine</li>
+        <li><strong>Multilingual</strong>Automatic language detection</li>
+        <li><strong>Standard output</strong>.srt, works in any editor</li>
+        <li><strong>Native</strong>Small, fast Tauri + Rust app</li>
+      </ul>
+
+      <div role="tablist" class="tabs" aria-label="Installation instructions">
+        <button role="tab" class="tab" id="tab-linux" aria-selected="true" aria-controls="panel-linux">
+          Linux
+        </button>
+        <button role="tab" class="tab" id="tab-mac" aria-selected="false" aria-controls="panel-mac">
+          macOS
+        </button>
+      </div>
+
+      <section id="panel-linux" class="panel" role="tabpanel" aria-labelledby="tab-linux">
+        <div class="cmd-row">
+          <code id="cmd-linux">curl -fsSL https://raw.githubusercontent.com/sindus/light-gen-subZ/main/install.sh | sh</code>
+          <button class="copy-btn" data-copy-target="cmd-linux">Copy</button>
+        </div>
+        <p class="panel-note">
+          Detects your architecture and installs a <code>.deb</code> (Debian/Ubuntu) or
+          <code>.AppImage</code> automatically. Requires <code>ffmpeg</code> to be installed.
+        </p>
+      </section>
+
+      <section id="panel-mac" class="panel" role="tabpanel" aria-labelledby="tab-mac" hidden>
+        <div class="cmd-row">
+          <code id="cmd-mac">brew tap sindus/light-gen-subz &amp;&amp; brew install --cask light-gen-subz</code>
+          <button class="copy-btn" data-copy-target="cmd-mac">Copy</button>
+        </div>
+        <p class="panel-note">Apple Silicon only for now. Requires Homebrew and ffmpeg (<code>brew install ffmpeg</code>).</p>
+      </section>
+
+      <div class="links">
+        <a href="https://github.com/sindus/light-gen-subZ">Source on GitHub</a>
+        <a href="https://github.com/sindus/light-gen-subZ/releases">All releases</a>
+        <a href="https://github.com/sindus/light-gen-subZ#readme">Documentation</a>
+      </div>
+
+      <footer>light-gen-subZ — MIT licensed.</footer>
+    </main>
+
+    <script>
+      const tabs = document.querySelectorAll('[role="tab"]');
+      const panels = { linux: document.getElementById('panel-linux'), mac: document.getElementById('panel-mac') };
+
+      function selectTab(key) {
+        for (const [k, panel] of Object.entries(panels)) {
+          const tab = document.getElementById('tab-' + k);
+          const selected = k === key;
+          tab.setAttribute('aria-selected', String(selected));
+          panel.hidden = !selected;
+        }
+      }
+
+      tabs.forEach((tab) => {
+        tab.addEventListener('click', () => selectTab(tab.id.replace('tab-', '')));
+      });
+
+      document.querySelectorAll('.copy-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const target = document.getElementById(btn.dataset.copyTarget);
+          await navigator.clipboard.writeText(target.textContent);
+          const original = btn.textContent;
+          btn.textContent = 'Copied';
+          setTimeout(() => (btn.textContent = original), 1500);
+        });
+      });
+
+      if (navigator.userAgent.includes('Mac')) {
+        selectTab('mac');
+      }
+    </script>
+  </body>
+</html>
