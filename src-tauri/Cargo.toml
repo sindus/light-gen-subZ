@@ -1,6 +1,6 @@
 [package]
 name = "light-gen-subz"
-version = "0.2.1"
+version = "0.2.2"
 description = "Video/audio to subtitle generator — local speech-to-text"
 authors = ["Sikander Ravate"]
 edition = "2021"

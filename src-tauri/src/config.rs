@@ -60,7 +60,22 @@ pub fn load_settings() -> Result<Settings> {
         return Ok(Settings::default());
     }
     let raw = std::fs::read_to_string(&path).context("reading settings file")?;
-    serde_json::from_str(&raw).context("parsing settings file")
+    let value: serde_json::Value = serde_json::from_str(&raw).context("parsing settings file")?;
+    Ok(Settings {
+        stt_engine: value
+            .get("stt_engine")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        translation_engine: value
+            .get("translation_engine")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        azure_translator_region: value
+            .get("azure_translator_region")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    })
 }
 
 pub fn save_settings(settings: &Settings) -> Result<()> {
