@@ -349,6 +349,7 @@ function App() {
   return (
     <main className="app">
       <header className="app-header">
+        <img src="/icon.svg" alt="" className="app-logo" aria-hidden="true" />
         <span className={`status-dot status-dot--${status}`} aria-hidden="true" />
         <span className="app-mark">Subtitles</span>
         <span className="app-status">{statusLabel[status]}</span>
